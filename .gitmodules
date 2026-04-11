@@ -1,0 +1,3 @@
+[submodule "uzlib"]
+	path = uzlib
+	url = https://github.com/pfalcon/uzlib
