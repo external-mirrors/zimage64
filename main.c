@@ -1,4 +1,5 @@
 #include "uzlib/src/uzlib.h"
+#include "cmdline.h"
 #include "mmu.h"
 
 static void unpack_kernel(const void* src, size_t src_sz, void* dst, size_t dst_sz)
@@ -24,6 +25,7 @@ extern const char _end[];
 
 unsigned __int128 main(void* dt)
 {
+    maybe_replace_cmdline(dt);
     enable_mmu((uintptr_t)_start, (uintptr_t)_start + image_size);
     uintptr_t src = (uintptr_t)_end;
     uint64_t kernel_header[8];

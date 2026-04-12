@@ -1,3 +1,6 @@
 [submodule "uzlib"]
 	path = uzlib
 	url = https://github.com/pfalcon/uzlib
+[submodule "udt"]
+	path = udt
+	url = https://gitlab.com/sleirsgoevy/udt
