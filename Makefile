@@ -1,7 +1,7 @@
 CC ?= gcc
 READELF ?= readelf
 OBJCOPY ?= objcopy
-CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only
+CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only -mstrict-align
 
 all: mkzimage64
 
