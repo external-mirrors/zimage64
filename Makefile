@@ -1,6 +1,7 @@
 CC ?= gcc
 READELF ?= readelf
 OBJCOPY ?= objcopy
+PREFIX ?= /usr/local
 CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only -mstrict-align
 
 all: mkzimage64
@@ -30,3 +31,9 @@ payload.elf: link.x crt.o main.o memset.o libtinf.o mmu.o cmdline.o
 
 mkzimage64: mkzimage64.c payload.bin
 	gcc mkzimage64.c -O2 -o mkzimage64 $(shell pkg-config --cflags --libs zlib)
+
+install: all
+	install -Dm755 mkzimage64 $(DESTDIR)$(PREFIX)/bin/mkzimage64
+
+uninstall:
+	rm -f $(DESTDIR)$(PREFIX)/bin/mkzimage64
