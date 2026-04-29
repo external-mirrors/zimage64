@@ -2,7 +2,7 @@ CC ?= gcc
 READELF ?= readelf
 OBJCOPY ?= objcopy
 PREFIX ?= /usr/local
-CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only -mstrict-align
+CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only -mstrict-align -nostdinc -I $(shell pwd)/isystem
 
 all: mkzimage64
 
