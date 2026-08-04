@@ -26,9 +26,9 @@ __attribute__((optimize(3),always_inline)) static inline void do_enable_mmu(uint
     }
     old_sctlr = sctlr;
     asm volatile("mrs %0, mair_el%1":"=r"(old_mair):"i"(el));
-    asm volatile("msr mair_el%1, %0"::"r"(255),"i"(el));
+    asm volatile("msr mair_el%1, %0"::"r"(255ull),"i"(el));
     asm volatile("mrs %0, tcr_el%1":"=r"(old_tcr):"i"(el));
-    asm volatile("msr tcr_el%1, %0"::"r"(17),"i"(el));
+    asm volatile("msr tcr_el%1, %0"::"r"(17ull),"i"(el));
     asm volatile("msr ttbr0_el%1, %0"::"r"(ttbr0),"i"(el));
     sctlr |= 0x1005;
     asm volatile("msr sctlr_el%1, %0"::"r"(sctlr),"i"(el));
