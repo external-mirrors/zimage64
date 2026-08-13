@@ -2,7 +2,8 @@ CC ?= gcc
 READELF ?= readelf
 OBJCOPY ?= objcopy
 PREFIX ?= /usr/local
-CFLAGS += -O3 -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fno-plt -fPIE -fno-pic -mgeneral-regs-only -mstrict-align -nostdinc -I $(shell pwd)/isystem
+CFLAGS ?= -O3
+REAL_CFLAGS := $(CFLAGS) -fno-stack-protector -ffunction-sections -fdata-sections -ffreestanding -fPIE -fno-PIC -fno-plt -mgeneral-regs-only -mstrict-align -nostdinc -I $(shell pwd)/isystem
 
 all: mkzimage64
 
@@ -15,18 +16,18 @@ payload.bin: payload.elf
 	$(OBJCOPY) --dump-section .text=$@ $< /dev/null
 
 libtinf.o: uzlib/src/*.c uzlib/src/*.h
-	$(CC) $(CFLAGS) uzlib/src/*.c -nostdlib -Wl,-r -no-pie -o $@
+	$(CC) $(REAL_CFLAGS) uzlib/src/*.c -nostdlib -Wl,-r -no-pie -o $@
 
 %.o: %.c *.h
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(REAL_CFLAGS) $< -c -o $@
 
-cmdline.o: cmdline.c *.h udt/*.h udt/*.c
-	$(CC) $(CFLAGS) $< -c -o $@
+dt.o: dt.c *.h udt/*.h udt/*.c
+	$(CC) $(REAL_CFLAGS) $< -c -o $@
 
 %.o: %.S
 	$(CC) $< -c -o $@
 
-payload.elf: link.x crt.o main.o memset.o libtinf.o mmu.o cmdline.o
+payload.elf: link.x crt.o main.o memset.o libtinf.o mmu.o dt.o
 	$(CC) -nostdlib -no-pie -Wl,-pie,--no-dynamic-linker -Wl,-e,_start,-gc-sections,-T,$^ -o $@
 
 mkzimage64: mkzimage64.c payload.bin

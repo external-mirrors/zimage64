@@ -13,12 +13,18 @@ Make sure that you specify the correct cross-compiler prefix. If compiling on aa
 ## Usage
 
 ```
-Usage: mkzimage64 [<infile> <outfile> [dtb]]
+Usage: %s [<infile> <outfile> [dtb]] [--payload <payload>...]
 
 Compresses the aarch64 kernel image at <infile> into the self-extracting kernel image at <outfile>.
 If a devicetree is specified in [dtb], it is appended after the compressed data.
 If no arguments are specified, stdin/stdout are used.
+One or more ARM payloads might be specified. If so, the corresponding ARM code will be run before the kernel.
 ```
+
+## Payloads
+
+Payloads should be raw ARM64 binaries, that will be run sequentially at page-aligned addresses.
+In `x0`, a pointer is provided to a function that takes a path to a devicetree property in `x0` and returns the address of the property data in `x0` and its size in `x1`.
 
 # License
 

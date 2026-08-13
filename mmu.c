@@ -41,7 +41,7 @@ __attribute__((optimize(3),always_inline)) static inline void do_disable_mmu(int
     asm volatile("msr mair_el%1, %0"::"r"(old_mair),"i"(el));
 }
 
-void enable_mmu(uintptr_t start, uintptr_t end)
+__attribute__((optimize(3))) void enable_mmu(uintptr_t start, uintptr_t end)
 {
     start &= -4096;
     end = (end + 4095) & -4096;

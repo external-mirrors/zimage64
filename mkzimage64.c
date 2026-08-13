@@ -116,7 +116,107 @@ extern const char payload_end[];
 
 #endif
 
-static int append_dtb(FILE* fout, const char* dtb_path, uint64_t* compressed_size, uint64_t* dtb_offset)
+static int write_payloads(FILE* fout, int argc, const char** argv, uint64_t* payloads_size)
+{
+    static char zeroes[4096];
+    *payloads_size = 8;
+    for(int i = 1; i < argc; i++)
+    {
+        if(!strcmp(argv[i], "--payload") && i + 1 < argc)
+        {
+            const char* payload_path = argv[++i];
+            int fdin = open(payload_path, O_RDONLY);
+            if(fdin < 0)
+            {
+                perror(payload_path);
+                return 1;
+            }
+            off_t sz = lseek(fdin, 0, SEEK_END);
+            char* mapping;
+            uint64_t chunk_size = 0;
+            if(sz >= 0)
+                chunk_size = ((sz + 4103) & -4096) - 8;
+            if(sz > 0 && sz == (size_t)sz && (mapping = mmap(0, sz, PROT_READ, MAP_PRIVATE, fdin, 0)) != MAP_FAILED)
+            {
+                if(fwrite(&chunk_size, sizeof(chunk_size), 1, fout) != 1
+                || fwrite(mapping, sz, 1, fout) != 1
+                || fwrite(zeroes, chunk_size - (size_t)sz, 1, fout) != 1)
+                {
+                    perror("fwrite");
+                    munmap(mapping, sz);
+                    close(fdin);
+                    return -1;
+                }
+                munmap(mapping, sz);
+                close(fdin);
+                *payloads_size += chunk_size + 8;
+                continue;
+            }
+            lseek(fdin, 0, SEEK_END);
+            off_t head = ftell(fout);
+            uint64_t actual_chunk_size = 0;
+            if(fwrite(&chunk_size, sizeof(chunk_size), 1, fout) != 1)
+            {
+                perror("fwrite");
+                close(fdin);
+                return -1;
+            }
+            char buf[4096];
+            ssize_t chk;
+            while((chk = read(fdin, buf, sizeof(buf))) > 0)
+            {
+                if(fwrite(buf, chk, 1, fout) != 1)
+                {
+                    perror("fwrite");
+                    close(fdin);
+                    return -1;
+                }
+                actual_chunk_size += chk;
+            }
+            if(chk < 0)
+            {
+                perror("read");
+                close(fdin);
+                return -1;
+            }
+            close(fdin);
+            uint64_t full_size = ((actual_chunk_size + 4103) & -4096) - 8;
+            if(fwrite(zeroes, full_size - actual_chunk_size, 1, fout) != 1)
+            {
+                perror("fwrite");
+                return -1;
+            }
+            if(full_size != chunk_size)
+            {
+                off_t tail = ftell(fout);
+                if(fseek(fout, head, SEEK_SET))
+                {
+                    perror("fseek");
+                    return -1;
+                }
+                if(fwrite(&full_size, sizeof(full_size), 1, fout) != 1)
+                {
+                    perror("fwrite");
+                    return -1;
+                }
+                if(fseek(fout, tail, SEEK_SET))
+                {
+                    perror("fseek");
+                    return -1;
+                }
+            }
+            *payloads_size += full_size + 8;
+        }
+    }
+    if(fwrite(zeroes, 8, 1, fout) != 1)
+    {
+        perror("fwrite");
+        return -1;
+    }
+    return 0;
+}
+
+static int append_dtb(FILE* fout, const char* dtb_path, uint64_t* compressed_size, uint64_t* dtb_offset, uint64_t payloads_size)
 {
     char buf[16] = {};
     if((*compressed_size) % 16 && fwrite(buf, (-*compressed_size) % 16, 1, fout) != 1)
@@ -124,8 +224,7 @@ static int append_dtb(FILE* fout, const char* dtb_path, uint64_t* compressed_siz
         perror("fwrite");
         return -1;
     }
-    *compressed_size += (-*compressed_size) % 16;
-    uint64_t orig_sz = *compressed_size;
+    uint64_t orig_sz = *compressed_size + (-*compressed_size % 16);
     if(dtb_path)
     {
         int fd = open(dtb_path, O_RDONLY);
@@ -146,7 +245,6 @@ static int append_dtb(FILE* fout, const char* dtb_path, uint64_t* compressed_siz
             }
             if(chk == 0)
                 break;
-            *compressed_size += chk;
             if(fwrite(buf, chk, 1, fout) != 1)
             {
                 perror("fwrite");
@@ -156,20 +254,59 @@ static int append_dtb(FILE* fout, const char* dtb_path, uint64_t* compressed_siz
         }
         close(fd);
     }
-    *dtb_offset = (payload_size + orig_sz) << 32;
+    *dtb_offset = (payload_size + payloads_size + orig_sz) << 32;
     return 0;
 }
 
-uint64_t get_image_size(uint64_t compressed_size, uint64_t uncompressed_size)
+static uint64_t get_image_size(uint64_t compressed_size, uint64_t uncompressed_size, uint64_t payloads_size)
 {
-    return payload_size + compressed_size + uncompressed_size + 0x1fffff;
+    return payload_size + payloads_size + compressed_size + uncompressed_size + 0x1fffff;
+}
+
+static void usage(const char* argv0)
+{
+    fprintf(stderr, R"(Usage: %s [<infile> <outfile> [dtb]] [--payload <payload>...]
+
+Compresses the aarch64 kernel image at <infile> into the self-extracting kernel image at <outfile>.
+If a devicetree is specified in [dtb], it is appended after the compressed data.
+If no arguments are specified, stdin/stdout are used.
+One or more ARM payloads might be specified. If so, the corresponding ARM code will be run before the kernel.
+)", argv0);
+    exit(1);
+}
+
+static void parse_argv(int argc, const char** argv, const char** input, const char** output, const char** dtb)
+{
+    const char** outs[3] = {input, output, dtb};
+    size_t idx = 0;
+    for(size_t i = 1; i < argc; i++)
+    {
+        if(argv[i][0] != '-')
+        {
+            if(idx == 3)
+                usage(argv[0]);
+            *outs[idx++] = argv[i];
+        }
+        else if(!strcmp(argv[i], "--payload") && i + 1 < argc && argv[i+1][0] != '-')
+            i++;
+        else
+            usage(argv[0]);
+    }
+    if(idx == 1)
+        usage(argv[0]);
+    while(idx < 3)
+        *outs[idx++] = 0;
 }
 
 int main(int argc, const char** argv)
 {
+    const char* input_filename;
+    const char* output_filename;
+    const char* dtb_filename;
+    parse_argv(argc, argv, &input_filename, &output_filename, &dtb_filename);
     int fdin;
     FILE* fout;
-    if(argc <= 1)
+    if(!input_filename)
     {
         fdin = 0;
         fout = fdopen(1, "wb");
@@ -179,31 +316,21 @@ int main(int argc, const char** argv)
             return 1;
         }
     }
-    else if((argc == 3 || argc == 4) && argv[1][0] != '-' && argv[2][0] != '-' && (argc == 3 || argv[3][0] != '-'))
+    else
     {
-        fdin = open(argv[1], O_RDONLY);
+        fdin = open(input_filename, O_RDONLY);
         if(fdin < 0)
         {
-            perror(argv[1]);
+            perror(input_filename);
             return 1;
         }
-        fout = fopen(argv[2], "wb");
+        fout = fopen(output_filename, "wb");
         if(!fout)
         {
-            perror(argv[2]);
+            perror(output_filename);
             close(fdin);
             return 1;
         }
-    }
-    else
-    {
-        fprintf(stderr, R"(Usage: %s [<infile> <outfile> [dtb]]
-
-Compresses the aarch64 kernel image at <infile> into the self-extracting kernel image at <outfile>.
-If a devicetree is specified in [dtb], it is appended after the compressed data.
-If no arguments are specified, stdin/stdout are used.
-)", argv[0]);
-        return 1;
     }
     FILE* fout_seekable = fout;
     off_t orig_pos = ftell(fout);
@@ -221,12 +348,14 @@ If no arguments are specified, stdin/stdout are used.
         }
         orig_pos = 0;
     }
+    uint64_t payloads_size;
     uint64_t header[10];
     memcpy(header, payload, sizeof(header));
     if((fwrite(payload, payload_size, 1, fout_seekable) != 1 && (perror("fwrite"), 1))
+    || (write_payloads(fout_seekable, argc, argv, &payloads_size) && (perror("write_payloads"), 1))
     || (do_compression(fout_seekable, fdin, header+8, header+9) && (perror("do_compression"), 1))
-    || (header[2] = get_image_size(header[8], header[9]), 0)
-    || append_dtb(fout_seekable, argc >= 4 ? argv[3] : 0, header+8, header+5) //see comment in crt.S
+    || (header[2] = get_image_size(header[8], header[9], payloads_size), 0)
+    || (append_dtb(fout_seekable, dtb_filename, header+8, header+5, payloads_size) && (perror("append_dtb"), 1)) //see comment in crt.S
     || (fseek(fout_seekable, orig_pos, SEEK_SET) && (perror("fseek"), 1))
     || (fwrite(header, sizeof(header), 1, fout_seekable) != 1 && (perror("fwrite"), 1)))
     {
