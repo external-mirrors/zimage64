@@ -39,6 +39,7 @@ __attribute__((optimize(3),always_inline)) static inline void do_disable_mmu(int
     asm volatile("msr sctlr_el%1, %0"::"r"(old_sctlr),"i"(el):"memory");
     asm volatile("msr tcr_el%1, %0"::"r"(old_tcr),"i"(el));
     asm volatile("msr mair_el%1, %0"::"r"(old_mair),"i"(el));
+    asm volatile("dsb ishst\ntlbi alle%0\ndsb ish\nisb"::"i"(el));
 }
 
 __attribute__((optimize(3))) void enable_mmu(uintptr_t start, uintptr_t end)
