@@ -39,7 +39,12 @@ __attribute__((optimize(3),always_inline)) static inline void do_disable_mmu(int
     asm volatile("msr sctlr_el%1, %0"::"r"(old_sctlr),"i"(el):"memory");
     asm volatile("msr tcr_el%1, %0"::"r"(old_tcr),"i"(el));
     asm volatile("msr mair_el%1, %0"::"r"(old_mair),"i"(el));
-    asm volatile("dsb ishst\ntlbi alle%0\ndsb ish\nisb"::"i"(el));
+    asm volatile("dsb ishst");
+    if(el == 2)
+        asm volatile("tlbi alle2");
+    else
+        asm volatile("tlbi vmalle1");
+    asm volatile("dsb ish\nisb");
 }
 
 __attribute__((optimize(3))) void enable_mmu(uintptr_t start, uintptr_t end)
@@ -85,6 +90,7 @@ __attribute__((optimize(3))) void disable_mmu(uintptr_t start, uintptr_t end)
     end = (end + 4095) & -4096;
     for(uintptr_t i = start; i < end; i += 16)
         asm volatile("dc civac, %0"::"r"(i));
+    asm volatile("dsb sy\nisb");
     if(is_in_el2())
         do_disable_mmu(2);
     else
